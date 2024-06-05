@@ -1,0 +1,5 @@
+git+https://github.com/nacloos/config-utils.git
+hydra-joblib-launcher
+pandas
+matplotlib
+seaborn

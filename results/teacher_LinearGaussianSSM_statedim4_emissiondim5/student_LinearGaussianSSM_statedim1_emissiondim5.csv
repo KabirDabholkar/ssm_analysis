@@ -1,0 +1,2 @@
+,model_name,train_loglikelihood_score_mean,train_loglikelihood_score_SEM,test_loglikelihood_score_mean,test_loglikelihood_score_SEM
+0,LinearGaussianSSM_statedim1_emissiondim5,-87.28104400634766,6.6970696449279785,-118.35936737060547,1.9864808320999146

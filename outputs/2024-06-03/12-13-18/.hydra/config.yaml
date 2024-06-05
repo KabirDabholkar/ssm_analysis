@@ -1,0 +1,5 @@
+num_timesteps: 10
+teacher:
+  _target_: dynamax.hidden_markov_model.PoissonHMM
+  num_states: 5
+  emission_dim: 5

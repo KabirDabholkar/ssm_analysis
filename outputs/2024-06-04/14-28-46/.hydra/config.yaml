@@ -1,0 +1,11 @@
+num_timesteps: 10
+train_trials: 10
+test_trials: 1000
+teacher:
+  _target_: dynamax.linear_gaussian_ssm.LinearGaussianSSM
+  state_dim: 2
+  emission_dim: 5
+student:
+  _target_: dynamax.linear_gaussian_ssm.LinearGaussianSSM
+  state_dim: 6
+  emission_dim: 5

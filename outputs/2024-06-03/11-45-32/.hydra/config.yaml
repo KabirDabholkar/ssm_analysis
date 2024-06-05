@@ -1,0 +1,2 @@
+teacher:
+  _target_: dynamax.hidden_markov_model.PoissonHMM

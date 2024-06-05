@@ -1,0 +1,23 @@
+defaults:
+  - paths
+  - model@teacher : LinearGaussianSSM
+  - model@student : LinearGaussianSSM
+  - _self_
+
+
+num_timesteps : 10
+
+train_trials : 10
+test_trials : 1000
+
+use_teacher_as_student  : false
+#use_teacher_as_student  : true
+
+student :
+  object  :
+    state_dim : 5
+
+result_save_path : ${result_save_path_base}/results/teacher_${teacher.model_name}/student_${student.model_name}
+result_save_path_if_use_teacher_as_student : ${result_save_path_base}/results/teacher_${teacher.model_name}/student_is_teacher
+
+

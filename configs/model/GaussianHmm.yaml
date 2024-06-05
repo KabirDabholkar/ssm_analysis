@@ -1,0 +1,7 @@
+_target_: utils.set_attributes
+object:
+  _target_: dynamax.hidden_markov_model.GaussianHMM
+  num_states: 5
+  emission_dim: 5
+
+model_name: GaussianHMM_numstates${.object.num_states}_emissiondim${.object.emission_dim}
