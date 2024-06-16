@@ -1,4 +1,7 @@
-
 results
-
 outputs
+
+
+# Ignore specific files
+*.log
+.DS_Store
