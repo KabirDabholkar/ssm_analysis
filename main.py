@@ -9,6 +9,12 @@ from jax import vmap
 from config_utils import instantiate
 import pandas as pd
 
+from dynamax.linear_gaussian_ssm import lgssm_smoother, parallel_lgssm_smoother
+from sklearn.model_selection import train_test_split
+
+import matplotlib.pyplot as plt
+
+
 # This is a sample Python script.
 
 # Press ⌃R to execute it or replace it with your code.
@@ -54,6 +60,9 @@ def main(cfg):
     # true_states, emissions = sample_many_trials(
     #         true_params, keys, cfg.num_timesteps
     # )
+
+
+    ###### fitting/copying student on/from teacher ########
     if cfg.use_teacher_as_student:
         student = teacher
         new_params = true_params
@@ -82,47 +91,91 @@ def main(cfg):
     #
     # split_model(student,new_params,[3])
 
+    if cfg.analysis.sample_posterior:
+        key,another_key = jr.split(key3, 2)
+        vmap_posterior_sample = vmap(student.posterior_sample, (None, None, 0))
+        posterior_samples = vmap_posterior_sample(another_key,new_params,train_emissions)
+
+        lgssm_posteriors = vmap(lambda y: student.smoother(params, y))
+
+
+        fig,ax = plt.subplots()
+        ax.plot(posterior_samples[:,:,0].T,posterior_samples[:,:,1].T)
+        savepath = cfg.result_save_path + '_posterior_trajectories.png'
+        fig.savefig(savepath,dpi=300)
+        # print(posterior_samples.shape)
+
 
     results = {}
     results['model_name'] = student.model_name
 
     #### run on train/test
-    marginal_log_prob_many_trials = vmap(student.marginal_log_prob, (None, 0), 0)
-    for name,dataset in zip(['train','test'],[train_emissions,test_emissions]):
-        loglikehood_scores = marginal_log_prob_many_trials(new_params,dataset)
+    if cfg.analysis.compute_test_train_loglikelihood:
+        marginal_log_prob_many_trials = vmap(student.marginal_log_prob, (None, 0), 0)
+        for name,dataset in zip(['train','test'],[train_emissions,test_emissions]):
+            loglikehood_scores = marginal_log_prob_many_trials(new_params,dataset)
 
-        results[name+'_loglikelihood_score_mean'] = float(loglikehood_scores.mean())
-        results[name+'_loglikelihood_score_SEM'] = float(np.std(loglikehood_scores)/np.sqrt(loglikehood_scores.shape[0]))
+            results[name+'_loglikelihood_score_mean'] = float(loglikehood_scores.mean())
+            results[name+'_loglikelihood_score_SEM'] = float(np.std(loglikehood_scores)/np.sqrt(loglikehood_scores.shape[0]))
 
+    posterior_dict = {}
+    #### run on train/test
+    if cfg.analysis.compute_decoding:
+        for model_name, model_params in zip(['teacher', 'student'], [true_params,new_params]):
+            for data_partition_name, dataset in zip(['train', 'test'], [train_emissions, test_emissions]):
+                # posterior = vmap(parallel_lgssm_smoother, (None, 0), 0)(model_params, dataset[0])
+                def meanandcov(x):
+                    posterior = parallel_lgssm_smoother(model_params, x)
+                    return (posterior.smoothed_means,posterior.smoothed_covariances)
+                posterior = vmap(meanandcov,0,(0,0))(dataset)
+                posterior_dict['_'.join([model_name, data_partition_name])] = posterior
+
+        # print([[np.array(p_).shape for p_ in p] for _, p in posterior_dict.items()])
+        min_num_trials = min([p[0].shape[0] for _,p in posterior_dict.items()])
+        posterior_dict = {k: v[0] for k, v in posterior_dict.items()}
+        posterior_dict = {k:v[:min_num_trials] for k,v in posterior_dict.items()}
+        posterior_dict = {k: v.reshape(-1,*v.shape[2:]) for k, v in posterior_dict.items()}
+
+        # for posterior_name_from, X in posterior_dict.items():
+        #     for posterior_name_to, y in posterior_dict.items():
+        #         X_train, X_test, y_train, y_test = train_test_split(X,y,random_state=0)
+        #         if hasattr(cfg.decoding, 'preprocess_target'):
+        #             y_train = instantiate(cfg.decoding.preprocess_target)(y_train)
+        #
+        #         model = instantiate(cfg.decoding.regression_model)
+        #         model.fit(
+        #             X_train,
+        #             y_train
+        #         )
+        #
+        #         pred_y_test = getattr(model, cfg.decoding.predict_method)(X_test)
+        #
+        #         metric = instantiate(cfg.decoding.metric)
+        #         score = np.stack([metric(
+        #             y_test[i],
+        #             pred_y_test[i]
+        #         ) for i in range(pred_y_test.shape[0])]).mean()
+        #
+        #         results['decoding_'+'->'.join([posterior_name_from,posterior_name_to])] = score
     print(results)
 
-    D = pd.DataFrame([results])
-    savepath = cfg.result_save_path + '.csv'
-    print(savepath)
-    if not os.path.exists(os.path.dirname(savepath)):
-        os.makedirs(os.path.dirname(savepath))
+    if cfg.analysis.save_results:
+        D = pd.DataFrame([results])
+        savepath = cfg.result_save_path + '.csv'
+        print(savepath)
+        if not os.path.exists(os.path.dirname(savepath)):
+            os.makedirs(os.path.dirname(savepath))
 
-    D.to_csv(savepath)
+        D.to_csv(savepath)
 
-
+    # print('teacher',true_params)
+    # print('student',new_params)
 
     # print('loglikehood_score',loglikehood_score_mean,r"\pm",loglikehood_score_SEM)
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     decorated_main()
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/

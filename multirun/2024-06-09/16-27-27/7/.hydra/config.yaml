@@ -1,0 +1,33 @@
+result_save_path_base: /Users/kabir/Documents/code/ssm_analysis
+teacher:
+  _target_: utils.set_attributes
+  object:
+    _target_: dynamax.hidden_markov_model.GaussianHMM
+    num_states: 5
+    emission_dim: 5
+  model_name: GaussianHMM_numstates${.object.num_states}_emissiondim${.object.emission_dim}
+student:
+  _target_: utils.set_attributes
+  object:
+    _target_: dynamax.hidden_markov_model.GaussianHMM
+    num_states: 9
+    emission_dim: 5
+  model_name: GaussianHMM_numstates${.object.num_states}_emissiondim${.object.emission_dim}
+optimizer:
+  algorithm: fit_sgd
+  fit_kwargs:
+    optimizer:
+      _target_: optax.adam
+      learning_rate: 0.01
+    batch_size: 200
+    num_epochs: 100
+    key:
+      _target_: jax.random.PRNGKey
+      seed: 0
+  name: ${.algorithm}_${.fit_kwargs.optimizer._target_}_lr${.fit_kwargs.optimizer.learning_rate}_batch${.fit_kwargs.batch_size}_epochs${.fit_kwargs.num_epochs}
+num_timesteps: 10
+train_trials: 10
+test_trials: 1000
+use_teacher_as_student: false
+result_save_path: ${result_save_path_base}/results/teacher_${teacher.model_name}_train${train_trials}/student_${student.model_name}
+result_save_path_if_use_teacher_as_student: ${result_save_path_base}/results/teacher_${teacher.model_name}_train${train_trials}/student_is_teacher

@@ -2,11 +2,15 @@ defaults:
   - paths
   - model@teacher : LinearGaussianSSM
   - model@student : LinearGaussianSSM
+#  - model@teacher : GaussianHmm
+#  - model@student : GaussianHmm
   - optimizer : adam
+  - decoding  : linear
   - _self_
 ####### multirun ##########
-  - hydra: state_dim_sweep
-  - override hydra/launcher: joblib
+#  - hydra: state_dim_sweep
+#  - hydra: num_state_sweep
+#  - override hydra/launcher: joblib
 
 
 num_timesteps : 10
@@ -16,11 +20,25 @@ test_trials : 1000
 use_teacher_as_student  : false
 #use_teacher_as_student  : true
 
+
+optimizer :
+  fit_kwargs  :
+    optimizer   :
+      learning_rate : 1e-2
+    num_epochs  : 2
+
 student :
   object  :
-    state_dim : 5
+    state_dim : 10
 
-result_save_path : ${result_save_path_base}/results/teacher_${teacher.model_name}/student_${student.model_name}
-result_save_path_if_use_teacher_as_student : ${result_save_path_base}/results/teacher_${teacher.model_name}/student_is_teacher
+result_save_path : ${result_save_path_base}/results/teacher_${teacher.model_name}_train${train_trials}/student_${student.model_name}
+result_save_path_if_use_teacher_as_student : ${result_save_path_base}/results/teacher_${teacher.model_name}_train${train_trials}/student_is_teacher
 
 
+
+
+analysis:
+  sample_posterior                  : false
+  compute_test_train_loglikelihood  : true
+  compute_decoding                  : true
+  save_results                      : true
