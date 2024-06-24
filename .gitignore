@@ -5,4 +5,4 @@ multirun/
 # Ignore specific files
 *.log
 .DS_Store
-.idea/
+*.idea/
