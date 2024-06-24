@@ -3,3 +3,7 @@ hydra-joblib-launcher
 pandas
 matplotlib
 seaborn
+dynamax
+numpy==1.26.4
+compose
+xarray

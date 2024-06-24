@@ -177,7 +177,7 @@ def main():
     DF,main_dir = collater(
         # main_dir='all_models_validated_v2/teacher_state5_poisson_partial_eps0.1_length10',
         # sub_dir='models_traintrials500'
-        main_dir='results/teacher_LinearGaussianSSM_statedim4_emissiondim5_train10',
+        main_dir='results/teacher_LinearGaussianSSM_statedim4_emissiondim5_offdiag_train10',
         # main_dir='results/teacher_GaussianHMM_numstates5_emissiondim5_train10',
         sub_dir=''
     )

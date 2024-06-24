@@ -1,0 +1,132 @@
+###########################
+length : ${num_timesteps}
+
+generate_all_data_jax:
+  _target_  : jax_utils.generate_data_from_model
+  _partial_ : true
+  trials  : ${total_trials}
+  num_timesteps : ${length}
+
+
+
+############################
+
+
+#generate_all_data:
+#  _target_  : prepare_model.sample_hmm
+#  _partial_ : true
+##  hmm_model : ${teacher}
+#  length    : ${length}
+#  trials    : ${eval:'(${train_trials}+${val_trials}+${test_trials})'}
+#  flatten   : false
+#
+#generate_all_data_with_states:
+#  _target_  : prepare_model.sample_hmm
+#  _partial_ : true
+##  hmm_model : ${teacher}
+#  length    : ${length}
+#  trials    : ${eval:'(${train_trials}+${val_trials}+${test_trials})'}
+#  flatten   : false
+#  return_states: true
+
+
+numpy_to_xarray_with_breakdownlabels:
+  _target_  : utils.MultiSelectDataArray  #xarray.DataArray
+#  data      :
+  _partial_ : true
+  dims      : [trials,time,neurons]
+  coords    :
+    trials_split : ${as_tuple:trials,${eval:${listmul:train,${train_trials}}+${listmul:test,${test_trials}}}}
+
+#    neurons_split : ${as_tuple:neurons,${eval:${listmul:heldin,${num_neurons_heldin}} +
+#                       ${listmul:heldout,${num_neurons_heldout}} +
+#                       ${listmul:reallyheldout,${num_neurons_reallyheldout}}}}
+
+numpy_to_xarray_with_breakdownlabels_split2:
+  _target_  : utils.MultiSelectDataArray  #xarray.DataArray
+#  data      :
+  _partial_ : true
+  dims      : [trials,time,neurons]
+  coords    :
+    trials_split : ${as_tuple:trials,${eval:${listmul:train,${train_trials}}+
+                                            ${listmul:val,${val_trials}}+
+                                            ${listmul:test,${test_trials}}}}
+    neurons_split : ${as_tuple:neurons,${eval:${listmul:heldin,${num_neurons_heldin}} +
+                       ${listmul:heldout,${num_neurons_heldout}}}}
+#numpy_to_xarray_with_breakdownlabels_instantiated:
+#  _target_: config_utils.instantiate
+#  ${numpy_to_xarray_with_breakdownlabels}
+#  '_convert_' : partial
+
+numpy_to_xarray_with_breakdownlabels_states:
+  _target_  : utils.MultiSelectDataArray  #xarray.DataArray
+#  data      :
+  _partial_ : true
+  dims      : [trials,time,features]
+  coords    :
+    trials_split : ${as_tuple:trials,${eval:${listmul:train,${train_trials}}+
+                                            ${listmul:val,${val_trials}}+
+                                            ${listmul:test,${test_trials}}}}
+
+
+
+
+###### Dict config generate ########
+
+hmm_sample_dictmodule:
+  _target_: config_utils.dict_module.DictModule
+  module  : ${generate_all_data}
+  in_keys   : [hmm_model]
+  out_keys  : [data_numpy]
+
+hmm_sample_with_states_dictmodule:
+  _target_: config_utils.dict_module.DictModule
+  module  : ${generate_all_data_with_states}
+  in_keys   : [hmm_model]
+  out_keys  : [data_numpy,states_data_numpy]
+
+dataarray_dictmodule:
+  _target_: config_utils.dict_module.DictModule
+  module  : ${numpy_to_xarray_with_breakdownlabels}
+  in_keys : [[data_numpy,data]]
+  out_keys: [data_xarray]
+
+dataarray_split2_dictmodule:
+  _target_: config_utils.dict_module.DictModule
+  module  : ${numpy_to_xarray_with_breakdownlabels_split2}
+  in_keys : [[data_numpy,data]]
+  out_keys: [data_xarray]
+
+dataarray_states_dictmodule:
+  _target_: config_utils.dict_module.DictModule
+  module  : ${numpy_to_xarray_with_breakdownlabels_states}
+  in_keys : [[states_data_numpy,data]]
+  out_keys: [states_data_xarray]
+
+generate_all_data_dictsequential:
+  _target_: config_utils.dict_module.DictSequential
+  _args_  :
+    - ${hmm_sample_dictmodule}
+    - ${dataarray_dictmodule}
+
+generate_all_data_with_states_dictsequential:
+  _target_: config_utils.dict_module.DictSequential
+  _args_  :
+    - ${hmm_sample_with_states_dictmodule}
+    - ${dataarray_split2_dictmodule}
+    - ${dataarray_states_dictmodule}
+
+
+generate_all_data_dictmodule:
+  _target_: config_utils.dict_module.DictModule
+  module  : ${generate_all_data_dictsequential}
+  in_keys : [hmm_model]
+  out_keys: [[data_xarray,null]]
+
+generate_all_data_with_states_dictmodule:
+  _target_: config_utils.dict_module.DictModule
+  module  : ${generate_all_data_with_states_dictsequential}
+  in_keys : [hmm_model]
+  out_keys: [data_xarray,states_data_xarray]
+
+################

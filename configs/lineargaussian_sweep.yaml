@@ -1,6 +1,10 @@
 defaults:
   - paths
-  - model@teacher : LinearGaussianSSM
+  - data_organisation
+  - breakups
+  - load_dataset: mc_maze_small_20
+  - path_to_save_files
+  - model@teacher : LinearGaussianSSM_offdiag
   - model@student : LinearGaussianSSM
 #  - model@teacher : GaussianHmm
 #  - model@student : GaussianHmm
@@ -8,14 +12,21 @@ defaults:
   - decoding  : linear
   - _self_
 ####### multirun ##########
-#  - hydra: state_dim_sweep
+  - hydra: state_dim_sweep
 #  - hydra: num_state_sweep
-#  - override hydra/launcher: joblib
+  - override hydra/launcher: joblib
 
 
-num_timesteps : 10
-train_trials : 10
-test_trials : 1000
+#num_timesteps : 10
+#train_trials : 10
+#test_trials : 1000
+
+num_timesteps : 35
+train_trials : 5
+test_trials : 70
+
+#data_mode: student-teacher
+data_mode: nlb
 
 use_teacher_as_student  : false
 #use_teacher_as_student  : true
@@ -24,21 +35,35 @@ use_teacher_as_student  : false
 optimizer :
   fit_kwargs  :
     optimizer   :
+#      learning_rate : 5e-4
+#    num_epochs  : 200
       learning_rate : 1e-2
-    num_epochs  : 2
+    num_epochs  : 100
 
 student :
   object  :
-    state_dim : 10
+    state_dim : 700
+    emission_dim : 142
 
-result_save_path : ${result_save_path_base}/results/teacher_${teacher.model_name}_train${train_trials}/student_${student.model_name}
-result_save_path_if_use_teacher_as_student : ${result_save_path_base}/results/teacher_${teacher.model_name}_train${train_trials}/student_is_teacher
+teacher_path : results/teacher_${teacher.model_name}_train${train_trials}
+result_save_path                              : ${teacher_path}/student_${student.model_name}_lr${optimizer.fit_kwargs.optimizer.learning_rate}_epochs${optimizer.fit_kwargs.num_epochs}
+result_save_path_if_use_teacher_as_student    : ${teacher_path}/student_is_teacher
+teacher_path_if_data_mode_nlb : results/nlb_${load_dataset.dataset_name}_${load_dataset.bin_size}_train${train_trials}
+
+#####################
+
+total_trials : ${eval:'(${train_trials}+${test_trials})'}
 
 
+##### protocol ######
 
+run_train : true
+save_student : true
+load_student : true
 
 analysis:
   sample_posterior                  : false
+  plot_matrices                     : false
   compute_test_train_loglikelihood  : true
-  compute_decoding                  : true
+  compute_decoding                  : false
   save_results                      : true

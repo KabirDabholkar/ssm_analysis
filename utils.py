@@ -4,6 +4,45 @@ from typing import Union
 from collections.abc import Iterable
 import numpy as np
 import os
+import xarray as xr
+
+class MultiSelectDataArray(xr.DataArray):
+    caller_argnames = ('X','lengths')
+    def select(self,**kwargs):
+        """
+        only works if resulting masks are 1-D.
+        """
+        if len(kwargs)==0:
+            return self
+
+        key, val = kwargs.popitem()
+        vals = val if isinstance(val, Iterable) else [val]
+        mask = self[key].isin(vals)
+        # print(self.coords)
+        # print({key:mask})
+        return self.sel(**{self[key].dims[0]:mask}).select(**kwargs)
+    def __call__(self,keys=None):
+        keys = self.caller_argnames if keys is None else keys
+        return dict(
+            zip(
+                keys,
+                flatten_with_lengths(np.array(self))
+            )
+        )
+    def astype(self, dtype, order='K', casting='unsafe', subok=True, copy=True):
+        new_obj = super().astype(dtype, order=order, casting=casting, subok=subok, copy=copy)
+        return MultiSelectDataArray(new_obj)
+
+
+def flatten_with_lengths(array: Union[np.ndarray,xr.DataArray]):
+    array_values = array
+    if isinstance(array,xr.DataArray):
+        array_values = array.values
+
+    trials,length = array.shape[:2]
+    array_r = np.reshape(array_values,(-1,*array.shape[2:]))
+    return array_r, [length]*trials
+
 
 def indicator_func_to_matrix(size,indicator_func,dtype=bool):
     A = np.zeros(size)
@@ -15,6 +54,12 @@ def indicator_func_to_matrix(size,indicator_func,dtype=bool):
 def make_path_if_not_exist(filename):
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
+
+def get_env_var(variable_name='ROOT_PATH'):
+    env_var = os.getenv(variable_name)
+    if not env_var:
+        raise EnvironmentError(f"'{variable_name}' environment variable not set")
+    return env_var
 
 def duplicate_list(item,repeats):
     return [item] * repeats
