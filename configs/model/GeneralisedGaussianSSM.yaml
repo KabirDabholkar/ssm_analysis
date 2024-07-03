@@ -1,0 +1,7 @@
+_target_: utils.set_attributes
+object:
+  _target_      : dynamax.generalized_gaussian_ssm.GeneralizedGaussianSSM
+  state_dim     : 4
+  emission_dim  : 5
+
+model_name: LinearGaussianSSM_statedim${.object.state_dim}_emissiondim${.object.emission_dim}

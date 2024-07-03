@@ -177,7 +177,8 @@ def main():
     DF,main_dir = collater(
         # main_dir='all_models_validated_v2/teacher_state5_poisson_partial_eps0.1_length10',
         # sub_dir='models_traintrials500'
-        main_dir='results/teacher_LinearGaussianSSM_statedim4_emissiondim5_offdiag_train10',
+        # main_dir='results/teacher_LinearGaussianSSM_statedim4_emissiondim5_offdiag_train10',
+        main_dir='results/nlb_mc_maze_small_20_train5',
         # main_dir='results/teacher_GaussianHMM_numstates5_emissiondim5_train10',
         sub_dir=''
     )
@@ -195,10 +196,17 @@ def main():
     DF_GT['state_dim'] = 4
     # DF_GT['num_states'] = 5
     DF = DF[~select_GT]
+
     # DF_GT = DF[DF['model_name'].str.contains('teacher')]
     print(DF['model_name'])
-    DF['state_dim'] = DF['model_name'].str.split('_').str[1].str.split('dim').str[1].astype(int)
+    # DF['state_dim'] = DF['model_name'].str.split('_').str[1].str.split('dim').str[1].astype(int)
+    # DF['epochs'] = DF['model_name'].str#.split('epochs').str[1]#.str.split('.').str[0].astype(int)
+
+    DF.dropna(subset=['state_dim'], inplace=True)
+    # DF = DF[DF['optimizer_learning_rate']<0.01]
     DF = DF.sort_values(by=['state_dim'])
+
+    print(DF.columns)
     # DF['num_states'] = DF['model_name'].str.split('_').str[1].str.split('states').str[1].astype(int)
     # DF = DF.sort_values(by=['num_states'])
 
@@ -208,66 +216,72 @@ def main():
             'x': 'state_dim',
             # 'x': 'num_states',
             'y': 'test_loglikelihood_score_mean',
+            'hue': 'optimizer_learning_rate',
             'data'  : DF,
             'func1': partial(sns.lineplot,lw=2,marker='o'),
             'data_lines' : DF_GT,
             'save_path': os.path.join('plots', main_dir, 'test_loglikelihood.png'),
             'logscale':{'set_xscale':'log'},
+            # 'ylim': (0, 1000),
+            'ylim': (-2000,2500)
         },
         {
             # 'x': 'num_states',
             'x': 'state_dim',
             'y': 'train_loglikelihood_score_mean',
+            'hue': 'optimizer_learning_rate',
             'data': DF,
             'func1': partial(sns.lineplot,lw=2,marker='o'),
             'data_lines': DF_GT,
             'save_path': os.path.join('plots', main_dir, 'train_loglikelihood.png'),
             'logscale': {'set_xscale': 'log'},
+            # 'ylim': (0,1000)
+            'ylim': (-2000, 2500)
         },
-        {
-            # 'x': 'num_states',
-            'x': 'state_dim',
-            'y': r'decoding_student_train->teacher_train',
-            'data': DF,
-            'func1': partial(sns.lineplot, lw=2, marker='o'),
-            'data_lines': DF_GT,
-            'ylim':(-0.1,1.05),
-            'save_path': os.path.join('plots', main_dir, 'decoding_student_train->teacher_train.png'),
-            'logscale': {'set_xscale': 'log'},
-        },
-        {
-            # 'x': 'num_states',
-            'x': 'state_dim',
-            'y': r'decoding_student_test->teacher_test',
-            'data': DF,
-            'func1': partial(sns.lineplot, lw=2, marker='o'),
-            'data_lines': DF_GT,
-            'ylim': (-0.1, 1.05),
-            'save_path': os.path.join('plots', main_dir, 'decoding_student_test->teacher_test.png'),
-            'logscale': {'set_xscale': 'log'},
-        },
-        {
-            # 'x': 'num_states',
-            'x': 'state_dim',
-            'y': r'decoding_teacher_train->student_train',
-            'data': DF,
-            'func1': partial(sns.lineplot, lw=2, marker='o'),
-            'data_lines': DF_GT,
-            'ylim': (-0.1, 1.05),
-            'save_path': os.path.join('plots', main_dir, 'decoding_teacher_train->student_train.png'),
-            'logscale': {'set_xscale': 'log'},
-        },
-        {
-            # 'x': 'num_states',
-            'x': 'state_dim',
-            'y': r'decoding_teacher_test->student_test',
-            'data': DF,
-            'func1': partial(sns.lineplot, lw=2, marker='o'),
-            'data_lines': DF_GT,
-            'ylim': (-0.1, 1.05),
-            'save_path': os.path.join('plots', main_dir, 'decoding_teacher_test->student_test.png'),
-            'logscale': {'set_xscale': 'log'},
-        },
+        # {
+        #     # 'x': 'num_states',
+        #     'x': 'state_dim',
+        #     'y': r'decoding_student_train->teacher_train',
+        #     'data': DF,
+        #     'func1': partial(sns.lineplot, lw=2, marker='o'),
+        #     'data_lines': DF_GT,
+        #     'ylim':(-0.1,1.05),
+        #     'save_path': os.path.join('plots', main_dir, 'decoding_student_train->teacher_train.png'),
+        #     'logscale': {'set_xscale': 'log'},
+        # },
+        # {
+        #     # 'x': 'num_states',
+        #     'x': 'state_dim',
+        #     'y': r'decoding_student_test->teacher_test',
+        #     'data': DF,
+        #     'func1': partial(sns.lineplot, lw=2, marker='o'),
+        #     'data_lines': DF_GT,
+        #     'ylim': (-0.1, 1.05),
+        #     'save_path': os.path.join('plots', main_dir, 'decoding_student_test->teacher_test.png'),
+        #     'logscale': {'set_xscale': 'log'},
+        # },
+        # {
+        #     # 'x': 'num_states',
+        #     'x': 'state_dim',
+        #     'y': r'decoding_teacher_train->student_train',
+        #     'data': DF,
+        #     'func1': partial(sns.lineplot, lw=2, marker='o'),
+        #     'data_lines': DF_GT,
+        #     'ylim': (-0.1, 1.05),
+        #     'save_path': os.path.join('plots', main_dir, 'decoding_teacher_train->student_train.png'),
+        #     'logscale': {'set_xscale': 'log'},
+        # },
+        # {
+        #     # 'x': 'num_states',
+        #     'x': 'state_dim',
+        #     'y': r'decoding_teacher_test->student_test',
+        #     'data': DF,
+        #     'func1': partial(sns.lineplot, lw=2, marker='o'),
+        #     'data_lines': DF_GT,
+        #     'ylim': (-0.1, 1.05),
+        #     'save_path': os.path.join('plots', main_dir, 'decoding_teacher_test->student_test.png'),
+        #     'logscale': {'set_xscale': 'log'},
+        # },
         # {
         #     'x': 'state_dim',
         #     'y': 'loglikehood_score_mean',

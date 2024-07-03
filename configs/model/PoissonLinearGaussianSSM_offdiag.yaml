@@ -1,0 +1,50 @@
+_target_: utils.set_attributes
+object:
+  _target_      : dynamax.generalized_gaussian_ssm.poisson_models.PoissonLinearGaussianSSM
+  state_dim     : 4
+  emission_dim  : 5
+model_name  : PoissonLinearGaussianSSM_statedim${.object.state_dim}_emissiondim${.object.emission_dim}_offdiag
+initialize_kwargs  :
+  dynamics_weights  :
+    _target_: utils.empty_call
+    func:
+      _target_: compose.compose
+      _args_:
+        - _target_  : jax.numpy.array
+          _partial_ : true
+        - _target_: utils.normalise
+          _partial_: true
+          axis: 1
+#        - ${eval:'lambda x:x+${....transmat_epsilon}'}
+        - _target_: numpy.roll
+          _partial_: true
+          shift: 1
+          axis: 1
+        - _target_: numpy.eye
+          _partial_: true
+          N: ${......object.state_dim}
+  emission_weights  :
+    _target_: utils.empty_call
+    func:
+      _target_: compose.compose
+      _args_:
+        - _target_: jax.numpy.array
+          _partial_: true
+        - ${eval:'lambda x:x*4e-2'}
+        - _target_  : numpy.random.normal
+          _partial_ : true
+          size :
+            - ${.......object.emission_dim}
+            - ${.......object.state_dim}
+  emission_bias  :
+    _target_: utils.empty_call
+    func:
+      _target_: compose.compose
+      _args_:
+        - _target_: jax.numpy.array
+          _partial_: true
+        - ${eval:'lambda x:x-2'}
+        - _target_  : numpy.zeros
+          _partial_ : true
+          shape :
+            - ${.......object.emission_dim}

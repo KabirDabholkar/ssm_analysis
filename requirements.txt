@@ -3,7 +3,10 @@ hydra-joblib-launcher
 pandas
 matplotlib
 seaborn
-dynamax
+# dynamax
 numpy==1.26.4
 compose
 xarray
+flax
+nlb_tools
+git+https://github.com/KabirDabholkar/dynamax.git

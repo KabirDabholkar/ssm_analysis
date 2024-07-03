@@ -1,8 +1,10 @@
 results/
 outputs/
 multirun/
+ssm_analysis/
 
 # Ignore specific files
 *.log
 .DS_Store
 .idea/
+*.png

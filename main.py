@@ -18,6 +18,10 @@ from nlb_tools.evaluation import evaluate
 from omegaconf_utils import omegaconf_resolvers
 import h5py
 
+import dynamax
+# print(dynamax.__version__)
+# import PoissonLinearGaussianSS
+
 from dynamax.linear_gaussian_ssm import lgssm_smoother, parallel_lgssm_smoother
 from sklearn.model_selection import train_test_split
 
@@ -46,7 +50,7 @@ def main(cfg):
 
     if cfg.data_mode == 'student-teacher':
         teacher = instantiate(cfg.teacher)
-        true_params, _ = teacher.initialize(key1, **instantiate(cfg.teacher.initialize_kwargs))
+        true_params, _ = teacher.initialize(key1, **(instantiate(cfg.teacher.initialize_kwargs) if hasattr(cfg.teacher,'initialize_kwargs') else {}))
         data_jax = instantiate(cfg.generate_all_data_jax, _convert_='partial')(
             model=teacher,params=true_params, key=key1
         )
@@ -138,21 +142,29 @@ def main(cfg):
 
     ###### fitting/copying student on/from teacher ########
     losses = None
+    optimizer_details = {}
     if cfg.use_teacher_as_student:
         student = teacher
         new_params = true_params
         student.model_name = 'Ground truth'
         cfg.result_save_path = cfg.result_save_path_if_use_teacher_as_student
     else:
-        params, props = student.initialize(key1)
+        params, props = student.initialize(key1,**(instantiate(cfg.student.initialize_kwargs) if hasattr(cfg.student,'initialize_kwargs') else {}))
         if cfg.run_train:
             # new_params,new_props = partial(student.fit_sgd,)(params,props,train_emissions)
             print(jax.numpy.array(data.select(trials_split='train')).shape)
+            optimizer_arg = instantiate(cfg.optimizer.fit_kwargs)
+            optimizer_details = {
+                'optimizer_class'           : cfg.optimizer.fit_kwargs.optimizer._target_,
+                'optimizer_learning_rate'   : cfg.optimizer.fit_kwargs.optimizer.learning_rate,
+                'optimizer_batchsize'       : cfg.optimizer.fit_kwargs.batch_size,
+                'optimizer_numepochs'       : cfg.optimizer.fit_kwargs.num_epochs,
+            }
             new_params,losses = getattr(student, cfg.optimizer.algorithm)(
                 params,
                 props,
                 jax.numpy.array(data.select(trials_split='train')),
-                **instantiate(cfg.optimizer.fit_kwargs)
+                **optimizer_arg
             )
 
     cfg.result_save_path = str(RESULT_BASE_PATH / cfg.result_save_path)
@@ -206,6 +218,9 @@ def main(cfg):
 
     results = {}
     results['model_name'] = student.model_name
+    for attr in ['state_dim']:
+        results[attr] = getattr(student,attr)
+    results = {**results,**optimizer_details}
 
     #### run on train/test
     if cfg.analysis.compute_test_train_loglikelihood:
@@ -298,6 +313,37 @@ def main(cfg):
         savepath = cfg.result_save_path + '_eigvals.png'
         os.makedirs(os.path.dirname(savepath), exist_ok=True)
         fig.savefig(savepath, dpi=300)
+
+    if cfg.analysis.stats:
+        titles = ['params.dynamics.bias', 'params.dynamics.weights', 'params.dynamics.cov', 'params.emissions.bias',
+                  'params.emissions.weights', 'params.emissions.cov']
+        param_list = [
+            [params.dynamics.bias, params.dynamics.weights, params.dynamics.cov, params.emissions.bias,
+             params.emissions.weights, params.emissions.cov]
+            for params in [params, new_params]
+        ]
+        param_list = zip(*param_list)
+
+        fig, axs = plt.subplots(2, 3, figsize=(10, 6))
+        for ax, params, title in zip(axs.flatten(), param_list, titles):
+            # a,b = param_list
+            ax.scatter(*params)
+            ax.set_title(title)
+
+        fig.tight_layout()
+        fig.savefig('test.png')
+        plt.close(fig)
+
+        from jax_utils import generate_data_from_model
+        sample_data = generate_data_from_model(model, params, key, 1, cfg.num_timesteps)
+
+        fig, ax = plt.subplots()
+        im = ax.imshow(sample_data[0])
+        fig.colorbar(im, ax=ax)
+        fig.savefig('test.png', bbox_inches='tight')
+        plt.close()
+
+
 
     if cfg.analysis.save_results:
         D = pd.DataFrame([results])
