@@ -18,7 +18,7 @@ This repository contains the code and experiments for the paper:
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/KabirDabholkar/ssm_analysis.git
    cd ssm_analysis
    ```
 
