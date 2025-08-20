@@ -8,3 +8,5 @@ ssm_analysis/
 .DS_Store
 .idea/
 *.png
+__pycache__/
+*.pyc
