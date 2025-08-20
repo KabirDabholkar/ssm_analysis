@@ -11,5 +11,7 @@ ssm_analysis/
 __pycache__/
 *.pyc
 
-# Allow PNG files in plots/results
+# Allow plots/results directory and its contents
+!plots/
+!plots/results/
 !plots/results/*.png
