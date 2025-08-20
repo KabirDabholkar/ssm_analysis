@@ -10,3 +10,6 @@ ssm_analysis/
 *.png
 __pycache__/
 *.pyc
+
+# Allow PNG files in plots/results
+!plots/results/*.png
