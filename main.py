@@ -6,7 +6,7 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 import jax.random as jr
 import jax.numpy as jnp
-from jax import vmap
+from jax import vmap,jit
 from config_utils import instantiate
 import pandas as pd
 from utils import get_env_var
@@ -17,8 +17,10 @@ from nlb_tools.make_tensors import make_eval_input_tensors, make_train_input_ten
 from nlb_tools.evaluation import evaluate
 from omegaconf_utils import omegaconf_resolvers
 import h5py
+from copy import deepcopy
 
 import dynamax
+from dynamax.parameters import to_unconstrained
 # print(dynamax.__version__)
 # import PoissonLinearGaussianSS
 
@@ -46,7 +48,8 @@ def main(cfg):
 
     print(OmegaConf.to_yaml(cfg))
 
-    key1, key2, key3 = jr.split(jr.PRNGKey(0), 3)
+    key1, key2, key3 = jr.split(jr.PRNGKey(493874), 3)
+    student_initial_key =  jr.PRNGKey(cfg.student_rngkey)
 
     if cfg.data_mode == 'student-teacher':
         teacher = instantiate(cfg.teacher)
@@ -57,6 +60,30 @@ def main(cfg):
         states, emissions = data_jax
         # print(emissions.shape)
         data = instantiate(cfg.numpy_to_xarray_with_breakdownlabels, _convert_='partial')(data=emissions)
+        print('full data shape',data.shape)
+
+        cfg_ = deepcopy(cfg)
+        cfg_.teacher.object.emission_dim = cfg.num_neurons_heldin
+        teacher_only_heldin = instantiate(cfg_.teacher)
+        # true_params_heldin = deepcopy(true_params)
+        true_params_heldin_kwargs = {
+            'initial_mean'       : true_params.initial.mean,
+            'initial_covariance' : true_params.initial.cov,
+            'dynamics_weights'   : true_params.dynamics.weights,
+            'dynamics_bias'      : true_params.dynamics.bias,
+            'dynamics_input_weights' : true_params.dynamics.input_weights,
+            'dynamics_covariance': true_params.dynamics.cov,
+            'emission_weights'   : true_params.emissions.weights[:cfg.num_neurons_heldin],
+            'emission_bias'      : true_params.emissions.bias[:cfg.num_neurons_heldin],
+            'emission_input_weights' : true_params.emissions.input_weights[:cfg.num_neurons_heldin],
+            'emission_covariance': true_params.emissions.cov[:cfg.num_neurons_heldin,:cfg.num_neurons_heldin],
+        }
+        # emissions_bias = jnp.split(true_params_heldin.emissions.bias,indices_or_sections=(10,) )[0]
+        # emissions_weights = jnp.split(true_params_heldin.emissions.weights, indices_or_sections=(10,))[0]
+        # emissions_cov = jnp.split(jnp.split(true_params_heldin.emissions.cov,
+        #                                     indices_or_sections=(10,))[0],
+        #                                      indices_or_sections=(10,),axis=1)
+        true_params_heldin,_ = teacher_only_heldin.initialize(key1,**true_params_heldin_kwargs)
     else:
         cfg.teacher_path = cfg.teacher_path_if_data_mode_nlb
         dataset_name = cfg.load_dataset.dataset_name
@@ -95,7 +122,7 @@ def main(cfg):
             train_dict = make_train_input_tensors(dataset, dataset_name, train_split, save_file=True,
                                                   save_path=train_save_path)
             eval_dict = make_eval_input_tensors(dataset, dataset_name, eval_split, save_file=True,
-                                                save_path=eval_save_path)
+                                                  save_path=eval_save_path)
             if phase == 'val':
                 print('making target dict')
                 target_dict = make_eval_target_tensors(dataset, dataset_name, train_split, eval_split, save_file=True,
@@ -143,29 +170,75 @@ def main(cfg):
     ###### fitting/copying student on/from teacher ########
     losses = None
     optimizer_details = {}
+    training_results = {}
     if cfg.use_teacher_as_student:
-        student = teacher
-        new_params = true_params
+        student = teacher_only_heldin
+        new_params = true_params_heldin
         student.model_name = 'Ground truth'
         cfg.result_save_path = cfg.result_save_path_if_use_teacher_as_student
     else:
-        params, props = student.initialize(key1,**(instantiate(cfg.student.initialize_kwargs) if hasattr(cfg.student,'initialize_kwargs') else {}))
+        params, props = student.initialize(student_initial_key,**(instantiate(cfg.student.initialize_kwargs) if hasattr(cfg.student,'initialize_kwargs') else {}))
         if cfg.run_train:
             # new_params,new_props = partial(student.fit_sgd,)(params,props,train_emissions)
-            print(jax.numpy.array(data.select(trials_split='train')).shape)
+            # print(jax.numpy.array(data.select(trials_split='train', neurons_split='heldin')).shape)
+            full_num_epochs = cfg.optimizer.fit_kwargs.num_epochs
+            cfg.optimizer.fit_kwargs.num_epochs = cfg.test_every_n_epochs
             optimizer_arg = instantiate(cfg.optimizer.fit_kwargs)
+            cfg.optimizer.fit_kwargs.num_epochs = full_num_epochs
+
+            early_stopping = instantiate(cfg.early_stopping)
+
             optimizer_details = {
                 'optimizer_class'           : cfg.optimizer.fit_kwargs.optimizer._target_,
                 'optimizer_learning_rate'   : cfg.optimizer.fit_kwargs.optimizer.learning_rate,
                 'optimizer_batchsize'       : cfg.optimizer.fit_kwargs.batch_size,
-                'optimizer_numepochs'       : cfg.optimizer.fit_kwargs.num_epochs,
+                'optimizer_numepochs'       : full_num_epochs,
+                'early_stopping'            : (early_stopping is not None),
             }
-            new_params,losses = getattr(student, cfg.optimizer.algorithm)(
-                params,
-                props,
-                jax.numpy.array(data.select(trials_split='train')),
-                **optimizer_arg
-            )
+            test_epochs = np.arange(cfg.test_every_n_epochs,full_num_epochs,cfg.test_every_n_epochs)
+
+            all_losses = []
+            new_params = params
+            opt_state = init_opt_state = None
+            if hasattr(optimizer_arg['optimizer'],'init'):
+                opt_state = init_opt_state = optimizer_arg['optimizer'].init(to_unconstrained(new_params,props))
+                print('Initialized optimizer state.')
+            for data_partition_name in ['train', 'test']:
+                training_results[data_partition_name + '_loglikelihood_score_mean'] = []
+                training_results[data_partition_name + '_loglikelihood_score_SEM'] = []
+            training_results['num_epochs'] = test_epochs
+            select_data = jax.numpy.array(data.select(trials_split='train',neurons_split='heldin'))
+            print('select_data shape',select_data.shape)
+
+
+            for t in test_epochs:
+                # print('opt_state',t,opt_state)
+                new_params,opt_state,losses = getattr(student, cfg.optimizer.algorithm)(
+                    new_params,
+                    props,
+                    select_data, #)),
+                    init_opt_state = opt_state,
+                    **optimizer_arg
+                )
+                all_losses.append(losses)
+                #### run on train/test
+                if cfg.analysis.compute_test_train_loglikelihood:
+                    marginal_log_prob_many_trials = vmap(student.marginal_log_prob, (None, 0), 0)
+                    for data_partition_name in ['train', 'test']:
+
+                        dataset = jax.numpy.array(data.select(trials_split=data_partition_name, neurons_split='heldin'))
+                        # print(dataset.shape)
+                        loglikehood_scores = marginal_log_prob_many_trials(new_params, dataset)
+
+                        training_results[data_partition_name + '_loglikelihood_score_mean'] += [float(loglikehood_scores.mean())]
+                        training_results[data_partition_name + '_loglikelihood_score_SEM'] += [float(np.std(loglikehood_scores) / np.sqrt(loglikehood_scores.shape[0]))]
+
+                if early_stopping is not None:
+                    early_stopping = early_stopping.update(-training_results['test_loglikelihood_score_mean'][-1])
+                    if early_stopping.should_stop:
+                        print(f'Met early stopping criteria, breaking at epoch {t}')
+                        break
+            losses = jnp.concatenate(all_losses)
 
     cfg.result_save_path = str(RESULT_BASE_PATH / cfg.result_save_path)
     if cfg.save_student:
@@ -200,10 +273,24 @@ def main(cfg):
         os.makedirs(os.path.dirname(savepath),exist_ok=True)
         fig.savefig(savepath, dpi=300)
 
+    if len(training_results)>0:
+        fig, ax = plt.subplots()
+        for data_partition_name in ['train', 'test']:
+            label = data_partition_name
+            score = training_results[label+ '_loglikelihood_score_mean']
+            all_epochs = training_results['num_epochs']
+            ax.plot(all_epochs[:len(score)],score,label=label)
+        ax.legend()
+        ax.set_ylabel('loglikelihood_score_mean')
+        ax.set_xlabel('Epoch')
+        savepath = cfg.result_save_path + '_loglikelihood_epochs.png'
+        os.makedirs(os.path.dirname(savepath), exist_ok=True)
+        fig.savefig(savepath, dpi=300)
+
     if cfg.analysis.sample_posterior:
         key,another_key = jr.split(key3, 2)
         vmap_posterior_sample = vmap(student.posterior_sample, (None, None, 0))
-        train_emissions = jax.numpy.array(data.select(trials_split='train'))
+        train_emissions = jax.numpy.array(data.select(trials_split='train',neurons_split='heldin'))
         posterior_samples = vmap_posterior_sample(another_key,new_params,train_emissions)
 
         lgssm_posteriors = vmap(lambda y: student.smoother(params, y))
@@ -226,7 +313,7 @@ def main(cfg):
     if cfg.analysis.compute_test_train_loglikelihood:
         marginal_log_prob_many_trials = vmap(student.marginal_log_prob, (None, 0), 0)
         for data_partition_name in ['train', 'test']:
-            dataset = jax.numpy.array(data.select(trials_split=data_partition_name))
+            dataset = jax.numpy.array(data.select(trials_split=data_partition_name,neurons_split='heldin'))
 
             loglikehood_scores = marginal_log_prob_many_trials(new_params,dataset)
 
@@ -236,14 +323,14 @@ def main(cfg):
     posterior_dict = {}
     #### run on train/test
     if cfg.analysis.compute_decoding:
-        for model_name, model_params in zip(['teacher', 'student'], [true_params,new_params]):
+        for model_name, model_params in zip(['teacher', 'student'], [true_params_heldin,new_params]):
             for data_partition_name in ['train', 'test']:
-                dataset = jax.numpy.array(data.select(trials_split=data_partition_name))
+                dataset = jax.numpy.array(data.select(trials_split=data_partition_name,neurons_split='heldin'))[:50]
                 # posterior = vmap(parallel_lgssm_smoother, (None, 0), 0)(model_params, dataset[0])
                 def meanandcov(x):
                     posterior = parallel_lgssm_smoother(model_params, x)
                     return (posterior.smoothed_means,posterior.smoothed_covariances)
-                posterior = vmap(meanandcov,0,(0,0))(dataset)
+                posterior = jit(vmap(meanandcov,0,(0,0)))(dataset) #,device=jax.devices('cpu')[0]
                 posterior_dict['_'.join([model_name, data_partition_name])] = posterior
 
         # print([[np.array(p_).shape for p_ in p] for _, p in posterior_dict.items()])
@@ -273,7 +360,62 @@ def main(cfg):
                 ) for i in range(pred_y_test.shape[0])]).mean()
 
                 results['decoding_'+'->'.join([posterior_name_from,posterior_name_to])] = score
-    print(results)
+
+
+    if cfg.analysis.fewshot_cosmoothing:
+
+
+        K = 10
+        num_repeats = 15
+        vmap_posterior_sample = vmap(student.posterior_sample, (0, None, 0), 0)
+        emissions = jax.numpy.array(data.select(trials_split='test',neurons_split='heldin'))
+
+
+        keys = jr.split(key3, emissions.shape[0])
+        posterior_samples1 = vmap_posterior_sample(keys, new_params, emissions)
+
+
+        keys = jr.split(key3, emissions.shape[0] * num_repeats).reshape(num_repeats,emissions.shape[0],-1)
+        vmapvmap_posterior_sample = vmap(vmap_posterior_sample, (0, None, None), 0)
+        posterior_samples_with_repeats = vmapvmap_posterior_sample(keys,new_params,emissions)
+
+        repeat_infos = ['',f'_{num_repeats}repeatssamples']
+
+        for repeat_info,posterior_samples in zip(repeat_infos,[posterior_samples1,posterior_samples_with_repeats]):
+            doing_repeats = (posterior_samples.ndim == 4)
+
+            Y = jnp.array(data.select(trials_split='test', neurons_split='heldout'))
+            if doing_repeats:
+                posterior_samples = posterior_samples.reshape(-1, *posterior_samples.shape[2:])
+                Y = jnp.stack([Y] * num_repeats)
+                Y = Y.reshape(-1,*Y.shape[2:])
+
+            perm = np.random.permutation(posterior_samples.shape[0])
+            posterior_samples = posterior_samples[perm]
+            Y = Y[perm]
+            print(Y.shape, posterior_samples.shape)
+
+            *X_train,X_test = np.split(np.array(posterior_samples),indices_or_sections=np.arange(1,10)*K*(num_repeats if doing_repeats else 1))
+            *Y_train,Y_test = np.split(np.array(Y),indices_or_sections=np.arange(1,10)*K*(num_repeats if doing_repeats else 1))
+
+            from sklearn.linear_model import LinearRegression
+            from sklearn.metrics import mean_squared_error
+
+            errs = []
+
+            for x_train,y_train in zip(X_train,Y_train):
+                x_train_r, y_train_r = [np.array(thing).reshape(-1,thing.shape[-1]) for thing in [x_train,y_train]]
+                model = LinearRegression()
+                model.fit(x_train_r, y_train_r)
+                Y_test_pred_r = model.predict(np.array(X_test).reshape(-1,X_test.shape[-1]))
+                errs.append(
+                    mean_squared_error(np.array(Y_test).reshape(-1,Y_test.shape[-1]), Y_test_pred_r)
+                )
+
+            print(errs)
+
+            results[f'{K}_shot{repeat_info}_{"mean_squared_error"}'] = np.mean(errs)
+        # posterior_samples
 
     if cfg.analysis.plot_matrices:
 
@@ -344,7 +486,6 @@ def main(cfg):
         plt.close()
 
 
-
     if cfg.analysis.save_results:
         D = pd.DataFrame([results])
         savepath = cfg.result_save_path + '.csv'
@@ -353,7 +494,8 @@ def main(cfg):
         os.makedirs(os.path.dirname(savepath),exist_ok=True)
 
         D.to_csv(savepath)
-
+    print(training_results)
+    print(results)
     # print('teacher',true_params)
     # print('student',new_params)
 

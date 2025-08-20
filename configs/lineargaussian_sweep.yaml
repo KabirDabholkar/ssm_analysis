@@ -4,10 +4,13 @@ defaults:
   - breakups
   - load_dataset: mc_maze_small_20
   - path_to_save_files
+  - model@teacher : LinearGaussianSSM
 #  - model@teacher : LinearGaussianSSM_offdiag
 #  - model@student : LinearGaussianSSM
-  - model@teacher : PoissonLinearGaussianSSM_offdiag
-  - model@student : PoissonLinearGaussianSSM
+  - model@student : LinearGaussianSSM_smallreadout
+#  - model@student : LinearGaussianSSM_largereadout
+#  - model@teacher : PoissonLinearGaussianSSM_offdiag
+#  - model@student : PoissonLinearGaussianSSM
 
 #  - model@teacher : GaussianHmm
 #  - model@student : GaussianHmm
@@ -15,23 +18,35 @@ defaults:
   - decoding  : linear
   - _self_
 ####### multirun ##########
-#  - hydra: state_dim_sweep
+  - hydra: state_dim_sweep
 #  - hydra: num_state_sweep
 #  - override hydra/launcher: joblib
 
 
-#num_timesteps : 10
-#train_trials : 10
-#test_trials : 1000
+num_timesteps : 10
+train_trials : 20
+test_trials : 500
 
-num_timesteps : 35
+num_neurons_heldin  : 5
+num_neurons_heldout : 30
+
+
+
+##### mc maze small params######
+#num_timesteps : 35
 #train_trials : 50
 #test_trials : 25
-train_trials : 5
-test_trials : 70
 
-#data_mode: student-teacher
-data_mode: nlb
+#train_trials : 5
+#test_trials : 70
+
+#train_trials : 10
+#test_trials : 65
+
+#################################
+
+data_mode: student-teacher
+#data_mode: nlb
 
 use_teacher_as_student  : false
 #use_teacher_as_student  : true
@@ -40,24 +55,30 @@ use_teacher_as_student  : false
 optimizer :
   fit_kwargs  :
     optimizer   :
+#      learning_rate : 1e-4
 #      learning_rate : 5e-4
-#      learning_rate : 5e-3
       learning_rate : 1e-3
-    num_epochs  : 500
+#      learning_rate : 2e-3
+#    num_epochs  : 500
 #      learning_rate : 1e-2
-#    num_epochs  : 200
+#      learning_rate : 5e-3
+    num_epochs  : 600
+    batch_size  : 20 #20
+
+test_every_n_epochs : 5 #20
 
 teacher :
   object  :
-    emission_dim : 142
+    emission_dim : ${eval:${num_neurons_heldin} + ${num_neurons_heldout}} #${num_neurons_heldin} #
 
 student :
   object  :
-    state_dim : 7
-    emission_dim : 142
+    state_dim : 10
+    emission_dim : ${num_neurons_heldin} #${teacher.object.emission_dim}
+student_rngkey : 10
 
 teacher_path : results/teacher_${teacher.model_name}_train${train_trials}
-result_save_path                              : ${teacher_path}/student_${student.model_name}_lr${optimizer.fit_kwargs.optimizer.learning_rate}_epochs${optimizer.fit_kwargs.num_epochs}
+result_save_path                              : ${teacher_path}/student_rngkey${student_rngkey}_${student.model_name}_lr${optimizer.fit_kwargs.optimizer.learning_rate}_epochs${optimizer.fit_kwargs.num_epochs}_batchsize_epochs${optimizer.fit_kwargs.batch_size}
 result_save_path_if_use_teacher_as_student    : ${teacher_path}/student_is_teacher
 teacher_path_if_data_mode_nlb : results/nlb_${load_dataset.dataset_name}_${load_dataset.bin_size}_train${train_trials}
 
@@ -66,6 +87,13 @@ hyperparams_to_save:
   lr          : ${optimizer.fit_kwargs.optimizer.learning_rate}
   state_dim   : ${student.object.state_dim}
 
+###### Early Stopping ######
+#early_stopping  : null
+
+early_stopping  :
+  _target_  : flax.training.early_stopping.EarlyStopping
+  min_delta : 1e-3
+  patience  : 2
 
 #####################
 
@@ -75,13 +103,14 @@ total_trials : ${eval:'(${train_trials}+${test_trials})'}
 ##### protocol ######
 
 run_train    : true
-save_student : true
-load_student : true
+save_student : false
+load_student : false
 
 analysis:
   sample_posterior                  : false
   plot_matrices                     : false
   compute_test_train_loglikelihood  : true
-  compute_decoding                  : false
+  compute_decoding                  : true
+  fewshot_cosmoothing               : true
   save_results                      : true
-  stats                             : true
+  stats                             : false

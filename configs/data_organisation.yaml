@@ -38,8 +38,9 @@ numpy_to_xarray_with_breakdownlabels:
   coords    :
     trials_split : ${as_tuple:trials,${eval:${listmul:train,${train_trials}}+${listmul:test,${test_trials}}}}
 
-#    neurons_split : ${as_tuple:neurons,${eval:${listmul:heldin,${num_neurons_heldin}} +
-#                       ${listmul:heldout,${num_neurons_heldout}} +
+    neurons_split : ${as_tuple:neurons,${eval:${listmul:heldin,${num_neurons_heldin}} +
+                       ${listmul:heldout,${num_neurons_heldout}}}}
+#                       +
 #                       ${listmul:reallyheldout,${num_neurons_reallyheldout}}}}
 
 numpy_to_xarray_with_breakdownlabels_split2:

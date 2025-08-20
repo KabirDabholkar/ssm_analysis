@@ -1,0 +1,22 @@
+_target_: utils.set_attributes
+object:
+  _target_      : dynamax.linear_gaussian_ssm.LinearGaussianSSM
+  state_dim     : 4
+  emission_dim  : 5
+
+model_name: LinearGaussianSSM_statedim${.object.state_dim}_emissiondim${.object.emission_dim}_largereadout
+initialize_kwargs  :
+  emission_weights  :
+    _target_: utils.empty_call
+    func:
+      _target_: compose.compose
+      _args_:
+        - _target_: jax.numpy.array
+          _partial_: true
+        - ${eval:'lambda x:x/(${.....object.state_dim})**0.5'}
+        - _target_  : numpy.random.normal
+          _partial_ : true
+          size :
+            - ${.......object.emission_dim}
+            - ${.......object.state_dim}
+

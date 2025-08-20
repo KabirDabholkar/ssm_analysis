@@ -2,7 +2,7 @@
 <project version="4">
   <component name="WebServers">
     <option name="servers">
-      <webServer id="98f5841d-1b08-42d8-bf99-a2adaf92182c" name="naamaserver">
+      <webServer id="98f5841d-1b08-42d8-bf99-a2adaf92182c" name="naamaserver (project level)">
         <fileTransfer rootFolder="/home/kabird" accessType="SFTP" host="132.68.139.145" port="22" sshConfigId="49176410-cd6c-44ad-978f-2587b4a3d945" sshConfig="kabird@132.68.139.145:22 key" keyPair="true">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
